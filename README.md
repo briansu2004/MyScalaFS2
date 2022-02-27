@@ -129,4 +129,136 @@ stream.evalTap(name => IO(println(s"Received: $name"))).compile.drain
 
 ![](image/README/fs2_effectful_stream_example.png)
 
+- fs2 infinite stream example
+
+```
+import fs2._
+import cats.effect.{IO, Timer}
+import scala.concurrent.ExecutionContext
+import scala.concurrent.duration._
+
+val stream1 = Stream.constant("PING")
+stream1.take(20).compile.toList
+
+val stream2 = Stream(1,2,3).repeat
+stream2.take(50).compile.toList
+
+implicit val timer: Timer[IO] = IO.timer(ExecutionContext.global)
+
+val stream = Stream.awakeEvery[IO](5.seconds)
+
+stream.take(2).compile.toList
+```
+
 ![](image/README/fs2_infinite_stream_example.png)
+
+## Big CSV Parse example
+
+![](image/README/fs2_big_csv_parse_sbt.png)
+
+```
+import cats.effect.{Blocker, ExitCode, IO, IOApp}
+import cats.implicits._
+import io.circe.generic.auto._
+import io.circe.syntax._
+import fs2._
+
+import java.io.File
+
+object BigCSVParsing extends IOApp {
+  // dataset: https://fr.openfoodfacts.org/data/fr.openfoodfacts.org.products.csv
+  val dataset = new File("C:/tmp/fs2_data/data.csv")
+  val output = new File("C:/tmp/fs2_data/output.json")
+
+  case class Row(
+                  code: String,
+                  url: String,
+                  creator: String,
+                  createdAt: String,
+                  createdDate: String,
+                  lastModifiedAt: String,
+                  lastModifiedDate: String,
+                  productName: String,
+                  genericName: String,
+                  quantity: String
+                )
+
+  override def run(args: List[String]): IO[ExitCode] =
+    Blocker[IO].use(blocker => {
+      fs2.io.file
+        .readAll[IO](dataset.toPath, blocker, 4096)
+        .through(text.utf8Decode)
+        .through(text.lines)
+        .map(_.split("\t"))
+        .collect({
+          case Array(
+            code,
+            url,
+            creator,
+            createdAt,
+            createdDate,
+            lastModifiedAt,
+            lastModifiedDate,
+            productName,
+            genericName,
+            quantity) => Row(
+            code,
+            url,
+            creator,
+            createdAt,
+            createdDate,
+            lastModifiedAt,
+            lastModifiedDate,
+            productName,
+            genericName,
+            quantity)
+        })
+        .filter(_.genericName.nonEmpty)
+        .map(_.asJson.noSpaces)
+        .through(text.utf8Encode)
+        .through(fs2.io.file.writeAll(output.toPath, blocker))
+        .compile
+        .drain >> IO(println("Done!"))
+        // >> same as .flatMap(_ => IO(println("Done!"))
+    }).as(ExitCode.Success)
+}
+```
+
+## Appendix
+
+### sbt for akka
+
+```
+val akkaVersion = "2.6.5"
+val akkaHttpVersion = "10.2.0"
+val akkaHttpJsonSerializersVersion = "1.34.0"
+
+libraryDependencies ++= Seq(
+  "com.typesafe.akka" %% "akka-actor-typed" % akkaVersion,
+  "com.typesafe.akka" %% "akka-http-spray-json" % akkaHttpVersion,
+  "com.typesafe.akka" %% "akka-stream" % akkaVersion,
+  "com.typesafe.akka" %% "akka-http-spray-json" % akkaHttpVersion,
+  "de.heikoseeberger" %% "akka-http-circe" % akkaHttpJsonSerializersVersion,
+  "de.heikoseeberger" %% "akka-http-jackson" % akkaHttpJsonSerializersVersion,
+)
+```
+
+### sbt for circe
+
+```
+val circeVersion = "0.13.0"
+
+libraryDependencies ++= Seq(
+  // circe
+  "io.circe" %% "circe-core" % circeVersion,
+  "io.circe" %% "circe-generic" % circeVersion,
+  "io.circe" %% "circe-parser" % circeVersion,
+)
+```
+
+I have to put these circe imports on the top (above other imports) ???
+
+```
+import io.circe.syntax._
+import io.circe.generic.auto._
+```
