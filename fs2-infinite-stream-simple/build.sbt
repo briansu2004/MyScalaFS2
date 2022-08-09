@@ -8,7 +8,7 @@ lazy val root = (project in file("."))
   )
 
 
-// FS2 v3.x supports Cats Effect 3 (current max version is 3.2.5
+// FS2 v3.x supports Cats Effect 3 (current max version is 3.2.5)
 // FS2 v2.x supports Cats Effect 2 (max version is v2.5.10)
 libraryDependencies += "org.typelevel" %% "cats-effect" % "2.5.3"
 
